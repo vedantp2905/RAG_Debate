@@ -2,8 +2,6 @@ import os
 import asyncio
 import re
 import shutil
-from dotenv import load_dotenv
-from langchain_groq import ChatGroq
 import pandas as pd
 import requests
 import streamlit as st
@@ -13,7 +11,6 @@ from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from crewai import Agent, Task, Crew
 from crewai_tools import DirectorySearchTool
-import PyPDF2
 
 def verify_gemini_api_key(api_key):
     API_VERSION = 'v1'
