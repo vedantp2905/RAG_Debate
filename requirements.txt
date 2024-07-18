@@ -1,0 +1,8 @@
+streamlit
+python-docx
+crewai
+langchain-google-genai
+openai
+langchain-core
+crewai-tools
+pysqlite3-binary
