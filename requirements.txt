@@ -6,3 +6,4 @@ openai
 langchain-core
 crewai-tools
 pysqlite3-binary
+xlsxwriter
