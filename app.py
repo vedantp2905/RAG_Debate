@@ -11,6 +11,7 @@ from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from crewai import Agent, Task, Crew
 from crewai_tools import DirectorySearchTool
+import chromadb
 
 def verify_gemini_api_key(api_key):
     API_VERSION = 'v1'
