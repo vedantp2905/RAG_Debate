@@ -1,12 +1,9 @@
 import os
-import asyncio
 import re
-import shutil
 import pandas as pd
 import requests
 import streamlit as st
 from io import BytesIO
-from docx import Document
 from langchain_openai import ChatOpenAI
 from crewai import Agent, Task, Crew
 from crewai_tools import PDFSearchTool
@@ -198,7 +195,7 @@ def generate_text(llm, rag_tool, topic, depth):
             
 def main():
     
-    st.header('Debate Generator')
+    st.header('AI Knowledge Base Debate Generator')
     validity_model = False
 
     if 'generated_content' not in st.session_state:
@@ -225,58 +222,47 @@ def main():
             else:
                 st.write(f"Invalid OpenAI API key")
 
-    if validity_model:
-        async def setup_OpenAI():
-            loop = asyncio.get_event_loop()
-            if loop is None:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
+        if validity_model:
             os.environ["OPENAI_API_KEY"] = api_key
             llm = ChatOpenAI(model='gpt-4o', temperature=0.6, max_tokens=3000, api_key=api_key)
             print("OpenAI Configured")
-            return llm
+    
+    uploaded_file = st.file_uploader("Upload Knowledge Base PDF file", type="pdf")
+    
+    if uploaded_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            tmp_file.write(uploaded_file.getvalue())
+            tmp_file_path = tmp_file.name
 
-        llm = asyncio.run(setup_OpenAI())
-        
-        uploaded_file = st.file_uploader("Upload Kownledge Base PDF file", type="pdf")
-        
-        if uploaded_file:
-        # Create a temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                tmp_file.write(uploaded_file.getvalue())
-                tmp_file_path = tmp_file.name
-
-            try:
-                rag_tool = configure_tool(tmp_file_path)
-            finally:
-            # Clean up the temporary file
-                os.unlink(tmp_file_path)
-        else:
-            rag_tool = None       
-        
-        if uploaded_file:    
-            topic = st.text_input("Enter the debate topic:", value=st.session_state.topic)
-            depth = st.text_input("Enter the depth required:", value=st.session_state.depth)
-            st.session_state.topic = topic
-            st.session_state.depth = depth
-        
-
-        if st.button("Generate Content"):
+        try:
+            rag_tool = configure_tool(tmp_file_path)
+        finally:
+            os.unlink(tmp_file_path)
+    else:
+        rag_tool = None       
+    
+    if uploaded_file:
+        topic = st.text_input("Enter the debate topic:", value=st.session_state.topic)
+        depth = st.text_input("Enter the depth required:", value=st.session_state.depth)
+        st.session_state.topic = topic
+        st.session_state.depth = depth
+        if st.button("Submit"):
             with st.spinner("Generating content..."):
-                st.session_state.generated_content = generate_text(llm,rag_tool, topic, depth)
+                st.session_state.generated_content = generate_text(llm, rag_tool, topic, depth)
                 process_content()
 
-        if st.session_state.generated_content:
-            st.markdown(st.session_state.generated_content)
+    if st.session_state.generated_content:
+        st.markdown(st.session_state.generated_content)
 
-            if st.session_state.excel_buffer is not None:
-                st.download_button(
-                    label="Download as Excel",
-                    data=st.session_state.excel_buffer,
-                    file_name=f"{st.session_state.topic}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+        if st.session_state.excel_buffer is not None:
+            st.download_button(
+                label="Download as Excel",
+                data=st.session_state.excel_buffer,
+                file_name=f"{st.session_state.topic}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+        
 
 if __name__ == "__main__":
     main()
