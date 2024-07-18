@@ -10,8 +10,8 @@ from docx import Document
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from crewai import Agent, Task, Crew
-from crewai_tools import DirectorySearchTool
-import chromadb
+from crewai_tools import PDFSearchTool
+import tempfile
 
 def verify_gemini_api_key(api_key):
     API_VERSION = 'v1'
@@ -85,64 +85,23 @@ def process_content():
 
     excel_buffer.seek(0)
     st.session_state.excel_buffer = excel_buffer.getvalue()
-
-def reset_saved_files_folder():
-    folder_name = "Saved Files"
-    if os.path.exists(folder_name):
-        shutil.rmtree(folder_name)
-    os.makedirs(folder_name)
-    print(f"'{folder_name}' folder has been reset.")
-
-def process_uploaded_files(uploaded_files):
-    for uploaded_file in uploaded_files:
-        if uploaded_file is not None:
-            # Create a path for the file in the Saved Files folder
-            os.path.join("Saved Files", uploaded_file.name)
             
-def configure_tool(mod):
-    if mod == 'Gemini':
-        rag_tool = DirectorySearchTool(
-            directory="Saved Files",
-            config=dict(
-                llm=dict(
-                    provider="google",
-                    config=dict(
-                        model="gemini-1.5-flash",
-                        temperature=0.6
-                    ),
+def configure_tool(file_path):
+    
+    rag_tool = PDFSearchTool(
+        pdf=file_path,
+        config=dict(
+            llm=dict(
+                provider="openai",
+                config=dict(
+                    model="gpt-4o",
+                    temperature=0.6
                 ),
-                embedder=dict(
-                    provider="google",
-                    config=dict(
-                        model="models/embedding-001",
-                        task_type="retrieval_document",
-                        title="Embeddings"
-                    ),
-                ),
-            )
+            ),
+
         )
-    else:
-        rag_tool = DirectorySearchTool(
-            directory="Saved Files",
-            config=dict(
-                llm=dict(
-                    provider="openai",
-                    config=dict(
-                        model="gpt-4o",
-                        temperature=0.6
-                    ),
-                ),
-            embedder=dict(
-                    provider="google",
-                    config=dict(
-                        model="models/embedding-001",
-                        task_type="retrieval_document",
-                        title="Embeddings"
-                    ),
-                ),
-            )
-        )
-        
+    )
+    
     return rag_tool
 
 def generate_text(llm, rag_tool, topic, depth):
@@ -192,7 +151,7 @@ def generate_text(llm, rag_tool, topic, depth):
 
     writer = Agent(
         role='Debate Summarizer',
-        goal="""Provide an unbiased summary of both sides' arguments, using only
+        goal="""Provide both sides' arguments, using only
         the information presented in the debate.""",
         backstory="""You are a highly respected journalist known for your impartiality.
         Your task is to synthesize the debate arguments, but you must not introduce
@@ -234,12 +193,12 @@ def generate_text(llm, rag_tool, topic, depth):
     )
 
     task_writer = Task(
-        description="""Provide an unbiased summary of both sides' arguments, synthesizing key points,
+        description="""Provide both sides' arguments, synthesizing key points,
         evidence, and rhetorical strategies into a cohesive report. Use only the information
         presented in the debate.""",
         agent=writer,
         context=[task_manager, task_proponent, task_opposition],
-        expected_output="A comprehensive and impartial summary of the debate, highlighting the key arguments, evidence, and rhetorical strategies used by both sides."
+        expected_output="A script of the debate, highlighting the key arguments, evidence, and rhetorical strategies used by both sides."
     )
 
     crew = Crew(
@@ -253,7 +212,6 @@ def generate_text(llm, rag_tool, topic, depth):
             
 def main():
     
-    reset_saved_files_folder()
     st.header('Debate Generator')
     validity_model = False
 
@@ -269,68 +227,53 @@ def main():
         st.session_state.excel_buffer = None
         
     with st.sidebar:
-        with st.form('Gemini/OpenAI/Groq'):
-            model = st.radio('Choose Your LLM', ('Gemini', 'OpenAI'))
-            api_key = st.text_input(f'Enter your API key', type="password")
+        with st.form('OpenAI'):
+            api_key = st.text_input(f'Enter your OpenAI API key', type="password")
             submitted = st.form_submit_button("Submit")
 
         if api_key:
-            if model == "Gemini":
-                validity_model = verify_gemini_api_key(api_key)
-            elif model == "OpenAI":
-                validity_model = verify_gpt_api_key(api_key)
+            validity_model = verify_gpt_api_key(api_key)
             
             if validity_model:
-                st.write(f"Valid {model} API key")
+                st.write(f"Valid OpenAI API key")
             else:
-                st.write(f"Invalid {model} API key")
+                st.write(f"Invalid OpenAI API key")
 
     if validity_model:
-        if model == 'OpenAI':
-            async def setup_OpenAI():
-                loop = asyncio.get_event_loop()
-                if loop is None:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
+        async def setup_OpenAI():
+            loop = asyncio.get_event_loop()
+            if loop is None:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
 
-                os.environ["OPENAI_API_KEY"] = api_key
-                llm = ChatOpenAI(model='gpt-4-turbo', temperature=0.6, max_tokens=2000, api_key=api_key)
-                print("OpenAI Configured")
-                return llm
+            os.environ["OPENAI_API_KEY"] = api_key
+            llm = ChatOpenAI(model='gpt-4-turbo', temperature=0.6, max_tokens=3000, api_key=api_key)
+            print("OpenAI Configured")
+            return llm
 
-            llm = asyncio.run(setup_OpenAI())
-
-        elif model == 'Gemini':
-            async def setup_gemini():
-                loop = asyncio.get_event_loop()
-                if loop is None:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                
-                os.environ['GOOGLE_API_KEY']=api_key
-                llm = ChatGoogleGenerativeAI(
-                    model="gemini-1.5-flash",
-                    verbose=True,
-                    temperature=0.6,
-                    google_api_key=api_key
-                )
-                print("Gemini Configured")
-                return llm
-
-            llm = asyncio.run(setup_gemini())
+        llm = asyncio.run(setup_OpenAI())
         
-        uploaded_files = st.file_uploader("Upload PDF files", type="pdf", accept_multiple_files=True)
+        uploaded_file = st.file_uploader("Upload Kownledge Base PDF file", type="pdf")
         
-        if uploaded_files:
-            process_uploaded_files(uploaded_files)
-            rag_tool = configure_tool(model)
+        if uploaded_file:
+        # Create a temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                tmp_file.write(uploaded_file.getvalue())
+                tmp_file_path = tmp_file.name
+
+            try:
+                rag_tool = configure_tool(tmp_file_path)
+            finally:
+            # Clean up the temporary file
+                os.unlink(tmp_file_path)
         else:
             rag_tool = None       
-            
-        topic = st.text_input("Enter the debate topic:", value=st.session_state.topic)
-        depth = st.text_input("Enter the depth required:", value=st.session_state.depth)
-        st.session_state.topic = topic
-        st.session_state.depth = depth
+        
+        if uploaded_file:    
+            topic = st.text_input("Enter the debate topic:", value=st.session_state.topic)
+            depth = st.text_input("Enter the depth required:", value=st.session_state.depth)
+            st.session_state.topic = topic
+            st.session_state.depth = depth
         
 
         if st.button("Generate Content"):
