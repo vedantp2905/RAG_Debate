@@ -8,23 +8,9 @@ import streamlit as st
 from io import BytesIO
 from docx import Document
 from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
 from crewai import Agent, Task, Crew
 from crewai_tools import PDFSearchTool
 import tempfile
-
-def verify_gemini_api_key(api_key):
-    API_VERSION = 'v1'
-    api_url = f"https://generativelanguage.googleapis.com/{API_VERSION}/models?key={api_key}"
-    
-    try:
-        response = requests.get(api_url, headers={'Content-Type': 'application/json'})
-        response.raise_for_status()
-        return True
-    except requests.exceptions.HTTPError:
-        return False
-    except requests.exceptions.RequestException as e:
-        raise ValueError(f"An error occurred: {str(e)}")
 
 def verify_gpt_api_key(api_key):
     headers = {
