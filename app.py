@@ -1,5 +1,7 @@
+import asyncio
 import os
 import re
+from langchain_google_genai import ChatGoogleGenerativeAI
 import pandas as pd
 import requests
 import streamlit as st
@@ -9,6 +11,25 @@ from crewai import Agent, Task, Crew
 from crewai_tools import PDFSearchTool
 import tempfile
 
+def verify_gemini_api_key(api_key):
+    API_VERSION = 'v1'
+    api_url = f"https://generativelanguage.googleapis.com/{API_VERSION}/models?key={api_key}"
+    
+    try:
+        response = requests.get(api_url, headers={'Content-Type': 'application/json'})
+        response.raise_for_status()  # Raises an HTTPError for bad responses
+        
+        # If we get here, it means the request was successful
+        return True
+    
+    except requests.exceptions.HTTPError as e:
+        
+        return False
+    
+    except requests.exceptions.RequestException as e:
+        # For any other request-related exceptions
+        raise ValueError(f"An error occurred: {str(e)}")
+    
 def verify_gpt_api_key(api_key):
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -69,22 +90,51 @@ def process_content():
     excel_buffer.seek(0)
     st.session_state.excel_buffer = excel_buffer.getvalue()
             
-def configure_tool(file_path):
+def configure_tool(file_path,mod):
     
-    rag_tool = PDFSearchTool(
-        pdf=file_path,
-        config=dict(
-            llm=dict(
-                provider="openai",
-                config=dict(
-                    model="gpt-4o",
-                    temperature=0.6
+    if mod == 'Gemini':
+        rag_tool = PDFSearchTool(
+            pdf=file_path,
+            config=dict(
+                    llm=dict(
+                        provider="google",
+                        config=dict(
+                            model="gemini-1.5-flash",
+                            temperature=0.6
+                        ),
+                    ),
+                    embedder=dict(
+                        provider="google",
+                        config=dict(
+                            model="models/embedding-001",
+                            task_type="retrieval_document",
+                            title="Embeddings"
+                        ),
+                    ),
+                )
+            )
+    else:
+        rag_tool = PDFSearchTool(
+            pdf=file_path,
+            config=dict(
+                llm=dict(
+                    provider="openai",
+                    config=dict(
+                        model="gpt-4o",
+                        temperature=0.6
+                    ),
                 ),
-            ),
-
+                embedder=dict(
+                    provider="google",
+                    config=dict(
+                        model="models/embedding-001",
+                        task_type="retrieval_document",
+                        title="Embeddings"
+                    ),
+                ),
+            )
         )
-    )
-    
+        
     return rag_tool
 
 def generate_text(llm, rag_tool, topic, depth):
@@ -211,21 +261,60 @@ def main():
         
     with st.sidebar:
         with st.form('OpenAI'):
-            api_key = st.text_input(f'Enter your OpenAI API key', type="password")
+            model = st.radio('Choose Your LLM', ('Gemini', 'OpenAI'))
+            api_key = st.text_input(f'Enter your API key', type="password")
             submitted = st.form_submit_button("Submit")
 
         if api_key:
-            validity_model = verify_gpt_api_key(api_key)
-            
-            if validity_model:
-                st.write(f"Valid OpenAI API key")
-            else:
-                st.write(f"Invalid OpenAI API key")
+            if model=='OpenAI':
+                validity_model = verify_gpt_api_key(api_key)
+                if validity_model ==True:
+                    st.write(f"Valid {model} API key")
+                else:
+                    st.write(f"Invalid {model} API key")   
+            elif model=='Gemini':
+                validity_model = verify_gemini_api_key(api_key)
+                if validity_model ==True:
+                    st.write(f"Valid {model} API key")
+                else:
+                    st.write(f"Invalid {model} API key") 
+                    
+    if validity_model:  
+        if model == 'OpenAI':
+            async def setup_OpenAI():
+                loop = asyncio.get_event_loop()
+                if loop is None:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
 
-        if validity_model:
-            os.environ["OPENAI_API_KEY"] = api_key
-            llm = ChatOpenAI(model='gpt-4o', temperature=0.6, max_tokens=3000, api_key=api_key)
-            print("OpenAI Configured")
+                os.environ["OPENAI_API_KEY"] = api_key
+                llm = ChatOpenAI(model='gpt-4-turbo',temperature=0.6, max_tokens=2000,api_key=api_key)
+                print("OpenAI Configured")
+                return llm
+
+            llm = asyncio.run(setup_OpenAI())
+
+        elif model == 'Gemini':
+            async def setup_gemini():
+                loop = asyncio.get_event_loop()
+                if loop is None:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                os.environ["GOOGLE_API_KEY"] = api_key
+                 
+                llm = ChatGoogleGenerativeAI(
+                    model="gemini-1.5-flash",
+                    verbose=True,
+                    temperature=0.6,
+                    max_output_tokens=3000,
+                    google_api_key=api_key
+                )
+                print("Gemini Configured")
+                return llm
+            
+            llm = asyncio.run(setup_gemini())
+    
     
     uploaded_file = st.file_uploader("Upload Knowledge Base PDF file", type="pdf")
     
@@ -235,7 +324,7 @@ def main():
             tmp_file_path = tmp_file.name
 
         try:
-            rag_tool = configure_tool(tmp_file_path)
+            rag_tool = configure_tool(tmp_file_path,model)
         finally:
             os.unlink(tmp_file_path)
     else:
@@ -252,7 +341,7 @@ def main():
                 process_content()
 
     if st.session_state.generated_content:
-        st.markdown(st.session_state.generated_content)
+        st.write(st.session_state.generated_content)
 
         if st.session_state.excel_buffer is not None:
             st.download_button(
