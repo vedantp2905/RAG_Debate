@@ -1,9 +1,9 @@
-streamlit
+streamlit==1.36.0
 python-docx
-crewai
-langchain-google-genai
-openai
-langchain-core
-crewai-tools
+crewai==0.30.11
+langchain-google-genai==1.0.4
+openai==1.31.0
+langchain-core==0.1.52
 pysqlite3-binary
-xlsxwriter
+langchain-community==0.0.38
+xlsxwriter==3.2.0
